@@ -44,10 +44,10 @@ async function createTable() {
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `);
-    console.log('✅ Tabela streams criada/verificada');
+    console.log('Tabela streams criada/verificada');
     return true;
   } catch (err) {
-    console.error('❌ Erro ao criar tabela:', err);
+    console.error('Erro ao criar tabela:', err);
     return false;
   }
 }
@@ -57,7 +57,7 @@ createTable();
 
 // Health check
 app.get('/health', (req, res) => {
-  console.log('🔍 Health check solicitado');
+  console.log('Health check solicitado');
   res.json({
     status: 'ok',
     timestamp: new Date().toISOString(),
@@ -70,14 +70,14 @@ app.get('/health', (req, res) => {
 app.get('/api/test-db', async (req, res) => {
   try {
     const result = await pool.query('SELECT NOW() as timestamp');
-    console.log('✅ Conexão do banco OK');
+    console.log('Conexão do banco OK');
     res.json({
       status: 'connected',
       timestamp: result.rows[0].timestamp,
       database: 'livevip'
     });
   } catch (err) {
-    console.error('❌ Erro no banco:', err);
+    console.error('Erro no banco:', err);
     res.status(500).json({ 
       error: 'Database connection failed',
       message: err.message 
@@ -88,7 +88,7 @@ app.get('/api/test-db', async (req, res) => {
 // Buscar todas as streams
 app.get('/api/streams', async (req, res) => {
   try {
-    console.log('📥 Buscando streams do banco...');
+    console.log('Buscando streams do banco...');
     
     // Garantir que tabela existe
     await createTable();
@@ -107,33 +107,33 @@ app.get('/api/streams', async (req, res) => {
       ORDER BY created_at DESC
     `);
     
-    console.log(`✅ ${result.rows.length} streams encontradas`);
+    console.log(`${result.rows.length} streams encontradas`);
     res.json(result.rows);
     
   } catch (err) {
-    console.error('❌ Erro ao buscar streams:', err);
+    console.error('Erro ao buscar streams:', err);
     res.status(200).json([]); // Retorna array vazio em caso de erro
   }
 });
 
-// Salvar streams (POST)
+// Salvar streams (POST - substitui todas)
 app.post('/api/streams', async (req, res) => {
   try {
-    console.log('📥 Requisição POST recebida');
-    console.log('📦 Body da requisição:', JSON.stringify(req.body, null, 2));
+    console.log('Requisição POST recebida');
+    console.log('Body da requisição:', JSON.stringify(req.body, null, 2));
     
     const streams = req.body;
     
     // Validação básica
     if (!streams || !Array.isArray(streams)) {
-      console.log('❌ Dados inválidos - não é array');
+      console.log('Dados inválidos - não é array');
       return res.status(400).json({ 
         error: 'Invalid data - expected array',
         received: typeof streams
       });
     }
     
-    console.log(`💾 Salvando ${streams.length} streams no banco...`);
+    console.log(`Salvando ${streams.length} streams no banco...`);
     
     // Garantir que tabela existe
     const tableCreated = await createTable();
@@ -143,7 +143,7 @@ app.post('/api/streams', async (req, res) => {
     
     // Limpar tabela existente
     await pool.query('DELETE FROM streams');
-    console.log('🗑️ Tabela streams limpa');
+    console.log('Tabela streams limpa');
     
     // Inserir novas streams
     let insertedCount = 0;
@@ -151,7 +151,7 @@ app.post('/api/streams', async (req, res) => {
       try {
         // Validar campos obrigatórios
         if (!stream.title || !stream.streamer) {
-          console.log('⚠️ Stream inválida:', stream);
+          console.log('Stream inválida:', stream);
           continue;
         }
         
@@ -168,15 +168,15 @@ app.post('/api/streams', async (req, res) => {
         ]);
         
         insertedCount++;
-        console.log(`✅ Stream inserida: ${stream.title} por ${stream.streamer}`);
+        console.log(`Stream inserida: ${stream.title} por ${stream.streamer}`);
         
       } catch (insertErr) {
-        console.error('❌ Erro ao inserir stream:', insertErr);
+        console.error('Erro ao inserir stream:', insertErr);
         console.error('Stream problemática:', stream);
       }
     }
     
-    console.log(`🎉 ${insertedCount} streams salvas com sucesso`);
+    console.log(`${insertedCount} streams salvas com sucesso`);
     
     res.json({ 
       success: true, 
@@ -185,7 +185,7 @@ app.post('/api/streams', async (req, res) => {
     });
     
   } catch (err) {
-    console.error('❌ Erro geral ao salvar streams:', err);
+    console.error('Erro geral ao salvar streams:', err);
     res.status(500).json({ 
       success: false, 
       error: 'Internal server error',
@@ -194,19 +194,92 @@ app.post('/api/streams', async (req, res) => {
   }
 });
 
+// Adicionar uma stream individual
+app.post('/api/streams/add', async (req, res) => {
+  try {
+    const { title, streamer, thumbnail, viewers, category, avatar } = req.body;
+    
+    console.log('POST /api/streams/add');
+    console.log('Nova stream:', req.body);
+    
+    const result = await pool.query(`
+      INSERT INTO streams (title, streamer, thumbnail, viewers, category, avatar)
+      VALUES ($1, $2, $3, $4, $5, $6)
+      RETURNING *
+    `, [title, streamer, thumbnail || '', parseInt(viewers) || 0, category || 'Geral', avatar || '']);
+    
+    console.log(`Nova stream criada: ${result.rows[0].title}`);
+    res.json({ success: true, created: result.rows[0] });
+    
+  } catch (err) {
+    console.error('Erro ao criar stream:', err);
+    res.status(500).json({ error: 'Failed to create stream' });
+  }
+});
+
+// Atualizar uma stream específica
+app.put('/api/streams/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { title, streamer, thumbnail, viewers, category, avatar } = req.body;
+    
+    console.log(`PUT /api/streams/${id}`);
+    console.log('Dados:', req.body);
+    
+    const result = await pool.query(`
+      UPDATE streams 
+      SET title = $1, streamer = $2, thumbnail = $3, viewers = $4, category = $5, avatar = $6, updated_at = CURRENT_TIMESTAMP
+      WHERE id = $7 
+      RETURNING *
+    `, [title, streamer, thumbnail || '', parseInt(viewers) || 0, category || 'Geral', avatar || '', id]);
+    
+    if (result.rowCount === 0) {
+      return res.status(404).json({ error: 'Stream not found' });
+    }
+    
+    console.log(`Stream ${id} atualizada: ${result.rows[0].title}`);
+    res.json({ success: true, updated: result.rows[0] });
+    
+  } catch (err) {
+    console.error('Erro ao atualizar stream:', err);
+    res.status(500).json({ error: 'Failed to update stream' });
+  }
+});
+
+// Deletar uma stream específica
+app.delete('/api/streams/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    console.log(`DELETE /api/streams/${id}`);
+    
+    const result = await pool.query('DELETE FROM streams WHERE id = $1 RETURNING *', [id]);
+    
+    if (result.rowCount === 0) {
+      return res.status(404).json({ error: 'Stream not found' });
+    }
+    
+    console.log(`Stream ${id} deletada: ${result.rows[0].title}`);
+    res.json({ success: true, deleted: result.rows[0] });
+    
+  } catch (err) {
+    console.error('Erro ao deletar stream:', err);
+    res.status(500).json({ error: 'Failed to delete stream' });
+  }
+});
+
 // Log de todas as requisições
 app.use((req, res, next) => {
   console.log(`${new Date().toISOString()} ${req.method} ${req.path}`);
   if (req.body && Object.keys(req.body).length > 0) {
-    console.log('📦 Body:', JSON.stringify(req.body).substring(0, 200) + '...');
+    console.log('Body:', JSON.stringify(req.body).substring(0, 200) + '...');
   }
   next();
 });
 
 // Iniciar servidor
 app.listen(port, '0.0.0.0', () => {
-  console.log(`🚀 Servidor rodando na porta ${port}`);
-  console.log(`🌐 URL: http://localhost:${port}`);
-  console.log(`📡 CORS habilitado`);
-  console.log(`💾 Banco: ${process.env.DB_HOST || 'livevip-bd'}`);
+  console.log(`Servidor rodando na porta ${port}`);
+  console.log(`URL: http://localhost:${port}`);
+  console.log(`CORS habilitado`);
+  console.log(`Banco: ${process.env.DB_HOST || 'livevip-bd'}`);
 });
